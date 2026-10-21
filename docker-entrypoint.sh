@@ -36,7 +36,7 @@ fi
 # ---------------------------------------------------------------------------
 if [ -n "${RENDER:-}" ]; then
     echo "==> Render detected; using dashboard environment variables."
-    : > .env
+    rm -f .env
 
     if [ -z "${DB_URL:-}" ]; then
         echo "==> ERROR: DB_URL is required on Render. Use the Neon direct connection string (not the pooled host)."
@@ -131,4 +131,13 @@ if [ -n "${RENDER:-}" ]; then
 fi
 PORT="${PORT:-8000}"
 echo "==> Class Eye API ready at http://localhost:${PORT}"
+
+if [ -n "${RENDER:-}" ]; then
+    # Run PHP's server directly so Render's environment variables reach the
+    # request process. `php artisan serve` strips non-passthrough variables
+    # when a .env file exists.
+    cd /var/www/html/public
+    exec php -S "0.0.0.0:${PORT}" ../vendor/laravel/framework/src/Illuminate/Foundation/resources/server.php
+fi
+
 exec php artisan serve --host=0.0.0.0 --port="${PORT}"
