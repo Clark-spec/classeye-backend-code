@@ -30,8 +30,31 @@ fi
 
 # ---------------------------------------------------------------------------
 # 3. Environment file and application key (idempotent).
+#    Render must use its dashboard environment variables. Copying the local
+#    Docker defaults would bake in DB_HOST=db, APP_DEBUG=true, and the local
+#    APP_URL, which makes production fail even when Neon is configured.
 # ---------------------------------------------------------------------------
-if [ ! -f .env ]; then
+if [ -n "${RENDER:-}" ]; then
+    echo "==> Render detected; using dashboard environment variables."
+    : > .env
+
+    if [ -z "${DB_URL:-}" ]; then
+        echo "==> ERROR: DB_URL is required on Render. Use the Neon direct connection string (not the pooled host)."
+        exit 1
+    fi
+
+    case "${DB_URL}" in
+        *"@db:"*|*"@db/"*)
+            echo "==> ERROR: DB_URL points at Docker's local 'db' host. Replace it with the Neon direct connection string."
+            exit 1
+            ;;
+    esac
+
+    if [ -z "${APP_KEY:-}" ]; then
+        echo "==> ERROR: APP_KEY is required on Render. Generate it with: php artisan key:generate --show"
+        exit 1
+    fi
+elif [ ! -f .env ]; then
     echo "==> Creating .env from .env.example..."
     cp .env.example .env
 fi
