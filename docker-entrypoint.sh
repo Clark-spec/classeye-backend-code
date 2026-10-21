@@ -98,18 +98,14 @@ if [ "${SEED_DEMO_DATA:-true}" != "false" ] && [ "${USER_COUNT:-0}" = "0" ]; the
     php artisan db:seed --force
 fi
 
-# Cache configuration in production so Neon/Render env vars are read once.
-APP_ENV_VALUE="${APP_ENV:-$(grep -E '^APP_ENV=' .env | tail -n 1 | cut -d= -f2-)}"
-if [ "$APP_ENV_VALUE" = "production" ]; then
-    echo "==> Caching configuration..."
-    php artisan config:cache
-else
-    php artisan config:clear >/dev/null 2>&1 || true
-fi
+php artisan config:clear >/dev/null 2>&1 || true
 
 # ---------------------------------------------------------------------------
 # 7. Serve the API on Render's PORT (or 8000 locally).
 # ---------------------------------------------------------------------------
+if [ -n "${RENDER:-}" ]; then
+    PORT="${PORT:-10000}"
+fi
 PORT="${PORT:-8000}"
 echo "==> Class Eye API ready at http://localhost:${PORT}"
 exec php artisan serve --host=0.0.0.0 --port="${PORT}"
