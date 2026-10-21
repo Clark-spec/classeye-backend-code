@@ -29,5 +29,10 @@ class UserSeeder extends Seeder
             ['staff_id' => 'T-10003'],
             ['name' => 'Ana Cruz', 'password' => 'password', 'role' => 'teacher']
         );
+
+        User::updateOrCreate(
+            ['staff_id' => 'T-10004'],
+            ['name' => 'Michael Cabiso', 'password' => 'password', 'role' => 'teacher']
+        );
     }
 }
