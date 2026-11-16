@@ -132,12 +132,8 @@ fi
 PORT="${PORT:-8000}"
 echo "==> Class Eye API ready at http://localhost:${PORT}"
 
-if [ -n "${RENDER:-}" ]; then
-    # Run PHP's server directly so Render's environment variables reach the
-    # request process. `php artisan serve` strips non-passthrough variables
-    # when a .env file exists.
-    cd /var/www/html/public
-    exec php -S "0.0.0.0:${PORT}" ../vendor/laravel/framework/src/Illuminate/Foundation/resources/server.php
-fi
-
-exec php artisan serve --host=0.0.0.0 --port="${PORT}"
+# Run PHP's server directly so container environment variables (such as
+# Ollama and Render settings) reach the request process. `php artisan serve`
+# strips non-passthrough variables when a .env file exists.
+cd /var/www/html/public
+exec php -S "0.0.0.0:${PORT}" ../vendor/laravel/framework/src/Illuminate/Foundation/resources/server.php
