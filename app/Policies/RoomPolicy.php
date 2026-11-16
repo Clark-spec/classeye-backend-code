@@ -26,7 +26,7 @@ class RoomPolicy
 
     public function create(User $user): bool
     {
-        return true;
+        return $user->isAdmin();
     }
 
     public function update(User $user, Room $room): bool
