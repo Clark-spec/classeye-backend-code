@@ -20,6 +20,7 @@ class ScheduleSeeder extends Seeder
         ];
 
         if (in_array(null, $teachers, true)) {
+            echo "ScheduleSeeder: one or more teacher accounts missing — skipping schedules.\n";
             return;
         }
 

@@ -116,9 +116,16 @@ try {
 }
 ' 2>/dev/null || echo 0)
 
-if [ "${SEED_DEMO_DATA:-true}" != "false" ] && [ "${USER_COUNT:-0}" = "0" ]; then
-    echo "==> Seeding demo data..."
-    php artisan db:seed --force
+if [ "${SEED_DEMO_DATA:-true}" != "false" ]; then
+    if [ "${USER_COUNT:-0}" = "0" ]; then
+        echo "==> Seeding demo data (fresh DB)..."
+        php artisan db:seed --force
+    else
+        # Users already exist — still re-run schedule seeder so schedules
+        # are never missing after a redeploy on a persistent DB (e.g. Render/Neon).
+        echo "==> Users exist; re-seeding schedules only..."
+        php artisan db:seed --class=ScheduleSeeder --force
+    fi
 fi
 
 php artisan config:clear >/dev/null 2>&1 || true
