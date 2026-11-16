@@ -3,6 +3,7 @@
 namespace App\Services\Ai;
 
 use App\Models\Room;
+use App\Models\Schedule;
 use App\Models\User;
 use Illuminate\Support\Collection;
 use Throwable;
@@ -138,6 +139,7 @@ class AssistantService
             'maintenance_rooms' => $maintenanceRooms,
             'by_floor' => $byFloor->all(),
             'rooms' => $rooms->all(),
+            'schedules' => $this->scheduleContext($user),
         ];
 
         return $this->redact($context);
@@ -170,6 +172,48 @@ class AssistantService
             'confidence' => 'high',
             'reason' => $isOver ? 'Occupancy exceeds room capacity.' : "Occupancy is at {$utilization}% of capacity.",
             'anomaly' => null,
+        ];
+    }
+
+    /**
+     * Build schedule context scoped by role.
+     * - Admin: sees ALL schedules across the school.
+     * - Teacher: sees ONLY their own assigned schedules (CIA Triad – need-to-know).
+     *
+     * No staff PII (names, IDs, emails) is included; instructor is omitted so
+     * the AI cannot leak personal data. Only subject, room, days, times, units.
+     *
+     * @return array<string, mixed>
+     */
+    private function scheduleContext(?User $user): array
+    {
+        $isAdmin = $user ? $user->isAdmin() : true;
+
+        $query = Schedule::query()->with(['room']);
+
+        // Teachers only see their own schedules
+        if (! $isAdmin && $user !== null) {
+            $query->where('schedules.user_id', $user->id);
+        }
+
+        $schedules = $query->get();
+
+        $items = $schedules->map(function (Schedule $s): array {
+            return [
+                'subject_code'      => $this->cleanText((string) $s->subject_code, 30),
+                'title'             => $this->cleanText((string) $s->descriptive_title, 80),
+                'room'              => $this->cleanText((string) ($s->room?->name ?? ''), 50),
+                'days'              => $s->orderedDays(),
+                'start_time'        => substr((string) $s->start_time, 0, 5),
+                'end_time'          => substr((string) $s->end_time, 0, 5),
+                'units'             => (int) $s->units,
+            ];
+        })->values()->all();
+
+        return [
+            'total' => count($items),
+            'scope' => $isAdmin ? 'all' : 'own',
+            'items' => $items,
         ];
     }
 

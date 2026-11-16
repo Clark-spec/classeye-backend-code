@@ -24,6 +24,13 @@ class ConversationGuard
         'seat', 'seats', 'space', 'spaces', 'wing', 'hall', 'lab',
         'laboratory', 'library', 'gym', 'cafeteria', 'update', 'updates',
         'status', 'change', 'changes', 'happening',
+        // schedule-specific
+        'subject', 'subjects', 'class', 'classes', 'unit', 'units',
+        'time', 'day', 'days', 'monday', 'tuesday', 'wednesday', 'thursday',
+        'friday', 'saturday', 'mwf', 'tth', 'tths', 'ttth',
+        'add', 'delete', 'edit', 'remove', 'create', 'manage',
+        'teaching', 'load', 'instructor', 'teacher', 'teachers',
+        'course', 'courses', 'section', 'lesson',
     ];
 
     private const GREETING_PATTERN = '/^(hi|hello|hey|greetings|good\s+(morning|afternoon|evening)|how\s+are\s+you(?:\s+doing)?|how\s+is\s+it\s+going|how\'s\s+it\s+going|what\'s\s+up)\b/i';
@@ -139,10 +146,9 @@ class ConversationGuard
     private function features(): string
     {
         return 'Class Eye can show room occupancy and capacity, flag over-capacity rooms, '
-            .'show instructor schedules, and keep a verifiable activity log. This chat answers '
-            .'occupancy questions and can also explain the system, its features, and its security '
-            .'design. It does not answer schedule questions, so check the Schedule page for '
-            .'those.';
+            .'show instructor schedules (subject, days, times, units, room), '
+            .'and keep a verifiable activity log. This chat answers both room occupancy '
+            .'and schedule questions, and can explain the system, its features, and its security design.';
     }
 
     private function howItWorks(): string

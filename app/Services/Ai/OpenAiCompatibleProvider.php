@@ -35,17 +35,18 @@ class OpenAiCompatibleProvider implements AiProvider
 
     public function answer(string $question, array $context, array $history = []): string
     {
-        $response = $this->request()
-            ->post($this->endpoint(), [
-                'model' => $this->model,
-                'messages' => [
-                    ['role' => 'system', 'content' => Prompt::system()],
-                    ['role' => 'user', 'content' => Prompt::user($question, $context, $history)],
-                ],
-                'max_tokens' => $this->maxTokens,
-                'temperature' => 0.2,
-                'stream' => false,
-            ]);
+        $body = [
+            'model'       => $this->model,
+            'messages'    => [
+                ['role' => 'system', 'content' => Prompt::system()],
+                ['role' => 'user',   'content' => Prompt::user($question, $context, $history)],
+            ],
+            'max_tokens'  => $this->maxTokens,
+            'temperature' => 0.2,
+            'stream'      => false,
+        ];
+
+        $response = $this->request()->post($this->endpoint(), $body);
 
         if ($response->failed()) {
             // Status only: response bodies can echo prompts or keys.

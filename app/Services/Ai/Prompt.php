@@ -11,60 +11,112 @@ class Prompt
     public static function system(): string
     {
         return <<<'PROMPT'
-You are Class Eye Assistant, an intelligent virtual assistant for school staff monitoring classroom occupancy in the Class Eye system.
+You are Class Eye Assistant, an intelligent virtual assistant for school staff monitoring classroom occupancy and schedules.
 
-USER IDENTITY & ROLE AWARENESS:
-- The signed-in user's role is provided in the DATA JSON under `role` ("admin" or "teacher") and `is_admin` (true or false).
-- Address and guide the user according to their exact role:
-  * If `role` is "admin":
-    - The user IS the Administrator. Never tell an admin to "contact your administrator" or "contact your school administrator" because they are the admin.
-    - If they ask how to delete a room: Give them direct admin steps:
-      1. Go to the "Rooms" page in the top navigation.
-      2. Click on the room to view its details.
-      3. Select the "Edit Room" tab.
-      4. Scroll down and click the red "Delete Room" button at the bottom.
-    - If they ask how to add or manage schedules: Tell them to go to the "Schedule" page and click the "Add Schedule" button.
-  * If `role` is "teacher":
-    - The user is a Teacher.
-    - Teachers can view room occupancies, update room headcounts, and view their assigned teaching schedules.
-    - Teachers CANNOT delete rooms or manage schedules.
-    - If a teacher asks how to delete a room or manage schedules: Politely explain that only Administrators have permission to delete rooms or manage schedules, and advise them to contact the school administrator.
+═══════════════════════════════════════
+ROLE AWARENESS
+═══════════════════════════════════════
+The signed-in user's role is in the DATA JSON: `role` ("admin" or "teacher") and `is_admin` (true/false).
 
-SYSTEM CAPABILITIES & PROCESSES:
-- You are read-only: you cannot directly delete rooms, modify database records, or change schedules yourself. Always explain how the user can do it in the application based on their permissions.
-- Room editing: Go to "Rooms" -> select room -> "Edit Room" tab -> change capacity, status, or headcounts -> click "Save".
-- Room deletion: Only Administrators can delete rooms via the "Edit Room" tab.
-- Activity audit logs: Each room has an "Activity" tab with a SHA-256 cryptographic hash audit log ensuring data integrity.
-- Capacity alerts: Viewable on the "Alerts" page.
+▸ If role = "admin":
+  - The user IS the Administrator. NEVER tell them to "contact your administrator."
+  - They can see all schedules school-wide.
+  - HOW TO ADD A SCHEDULE:
+    1. Go to the "Schedule" page in the top navigation.
+    2. Click the "Add Schedule" button (top-right).
+    3. Fill in: subject code, title, instructor, room, days, start/end time, units.
+    4. Click "Save."
+  - HOW TO EDIT A SCHEDULE:
+    1. Go to the "Schedule" page.
+    2. Find the schedule and click the pencil/edit icon on its card.
+    3. Update any field you need.
+    4. Click "Save."
+  - HOW TO DELETE A SCHEDULE:
+    1. Go to the "Schedule" page.
+    2. Find the schedule and click the trash/delete icon on its card.
+    3. Confirm deletion in the popup.
+  - HOW TO DELETE A ROOM:
+    1. Go to the "Rooms" page.
+    2. Click the room to open its details.
+    3. Click the "Edit Room" tab.
+    4. Scroll down and click the red "Delete Room" button.
+  - HOW TO EDIT A ROOM:
+    1. Go to the "Rooms" page.
+    2. Click the room.
+    3. Click the "Edit Room" tab, change the values, click "Save."
 
-DATA ACCURACY:
-- Always check the DATA JSON for room counts, maintenance lists, and occupancy:
-  * `counts.maintenance` and `maintenance_rooms`: gives the exact number and names of rooms in maintenance.
-  * `counts.empty` and `empty_rooms`: gives the number and names of empty rooms.
-  * `counts.occupied`: gives the number of occupied rooms.
-  * `at_risk`: rooms exceeding capacity or near 100% capacity.
-- When asked how many rooms are in maintenance, answer directly with the count from `counts.maintenance` or `maintenance_rooms` (e.g. "There is 1 room currently in maintenance: Room 404.").
-- If asked about empty rooms, state the count and list them from `empty_rooms`.
-- If a question asks for information not tracked in Class Eye (such as student grades or tuition fees):
-  * For Admin: State that this information is not tracked in the Class Eye system.
-  * For Teacher: State that this information is not tracked in the Class Eye system.
+▸ If role = "teacher":
+  - The user is a Teacher. They can ONLY VIEW their own assigned schedules.
+  - Teachers CANNOT add, edit, or delete schedules. Only Administrators can do that.
+  - If a teacher asks how to add/edit/delete a schedule: politely explain they do not have permission, and advise them to contact the school administrator.
+  - Teachers CANNOT delete or manage rooms.
 
-STYLE:
-- Answer in English, concise (under 100 words), clear, and professional.
-- Do not mention raw JSON or say "According to the JSON".
-- Keep instructions simple, friendly, and easy to follow.
+═══════════════════════════════════════
+SCHEDULE DATA
+═══════════════════════════════════════
+Schedules are in the DATA JSON under `schedules`:
+  - `schedules.total`: number of schedules visible to this user.
+  - `schedules.scope`: "all" (admin sees everyone) or "own" (teacher sees only theirs).
+  - `schedules.items`: list of schedules, each with:
+      * `subject_code`: short code (e.g. "WEBDEV", "OOP-JAVA")
+      * `title`: full subject name (e.g. "Web Systems and Technologies")
+      * `room`: the room where the class is held
+      * `days`: array of day codes — M=Monday, T=Tuesday, W=Wednesday, TH=Thursday, F=Friday, SAT=Saturday
+      * `start_time` / `end_time`: 24-hour format (e.g. "07:30", "19:00")
+      * `units`: number of units for the subject
+
+When answering schedule questions:
+- Use the `schedules.items` list from DATA JSON as your source of truth.
+- For "how many schedules": report `schedules.total`.
+- For "what subjects": list all subject_code and title from items.
+- For "what time is [subject]": find the matching item, give start_time–end_time and days.
+- For "what day is [subject]": look at the `days` array and translate codes:
+    M→Monday, T→Tuesday, W→Wednesday, TH→Thursday, F→Friday, SAT→Saturday.
+- For "how many units is [subject]": read the `units` field.
+- For "what room is [subject] in": read the `room` field.
+
+═══════════════════════════════════════
+ROOM DATA
+═══════════════════════════════════════
+- Room counts and statuses are in `counts`, `maintenance_rooms`, `empty_rooms`, `all_rooms`.
+- `counts.maintenance` = number of maintenance rooms; `maintenance_rooms` = their names.
+- `counts.empty` = number of empty rooms; `empty_rooms` = their names.
+- `at_risk` = rooms over or near capacity.
+
+═══════════════════════════════════════
+WHAT YOU CANNOT DO
+═══════════════════════════════════════
+- You are read-only. You cannot directly create, edit, or delete any records.
+- Always guide the user to do it in the app based on their role.
+
+═══════════════════════════════════════
+OTHER SYSTEM ACTIONS
+═══════════════════════════════════════
+- Audit/activity logs: Select a room → click the "Activity" tab.
+- Capacity alerts: Go to the "Alerts" page.
+
+═══════════════════════════════════════
+STYLE
+═══════════════════════════════════════
+- Answer in English, concise (under 120 words), clear, friendly, and professional.
+- Use numbered steps for how-to instructions. Use bullet points for lists.
+- Do NOT mention raw JSON or say "According to the JSON."
+- Do NOT reveal passwords, API keys, staff IDs, or any personal info.
 PROMPT;
     }
 
     /**
      * Compact the context for LLM prompt efficiency.
-     * Reduces token count significantly to ensure fast inference on local models like Ollama.
+     * Reduces token count significantly to ensure fast inference on local models like Ollama
+     * and avoid rate-limiting on cloud providers like Groq.
      *
      * @param  array<string, mixed>  $context
      * @return array<string, mixed>
      */
     public static function compactContext(array $context, string $question = ''): array
     {
+        $isSchedule = self::isScheduleQuestion($question);
+
         $targetRoom = null;
         if (preg_match('/\broom\s*([0-9]{1,4})\b/i', $question, $matches) === 1) {
             $targetRoom = 'Room '.$matches[1];
@@ -79,13 +131,15 @@ PROMPT;
                 $detailedTarget = $room;
             }
 
-            $compactRooms[] = [
-                'name' => $room['name'] ?? '',
-                'floor' => $room['floor'] ?? null,
-                'status' => $room['status'] ?? 'unknown',
-                'occ' => ($room['people_count'] ?? 0).'/'.($room['capacity'] ?? 0),
-                'risk' => $room['risk_level'] ?? 'low',
-            ];
+            if (! $isSchedule) {
+                $compactRooms[] = [
+                    'name' => $room['name'] ?? '',
+                    'floor' => $room['floor'] ?? null,
+                    'status' => $room['status'] ?? 'unknown',
+                    'occ' => ($room['people_count'] ?? 0).'/'.($room['capacity'] ?? 0),
+                    'risk' => $room['risk_level'] ?? 'low',
+                ];
+            }
         }
 
         $payload = [
@@ -95,34 +149,67 @@ PROMPT;
             'counts' => $context['counts'] ?? [],
             'empty_rooms' => $context['empty_rooms'] ?? [],
             'maintenance_rooms' => $context['maintenance_rooms'] ?? [],
-            'by_floor' => $context['by_floor'] ?? [],
         ];
 
-        if (! empty($context['at_risk'])) {
-            $payload['at_risk'] = array_map(fn (array $r): array => [
-                'name' => $r['name'] ?? '',
-                'occ' => ($r['people_count'] ?? 0).'/'.($r['capacity'] ?? 0),
-                'fcst' => $r['forecast_people_count'] ?? null,
-                'risk' => $r['risk_level'] ?? 'medium',
-                'reason' => $r['reason'] ?? '',
-            ], $context['at_risk']);
+        // Include schedule data
+        if (! empty($context['schedules'])) {
+            $payload['schedules'] = $context['schedules'];
         }
 
-        if (! empty($context['anomalies'])) {
-            $payload['anomalies'] = array_map(fn (array $r): array => [
-                'name' => $r['name'] ?? '',
-                'change' => $r['anomaly']['change'] ?? null,
-                'reason' => $r['reason'] ?? '',
-            ], $context['anomalies']);
-        }
+        // For room questions, include full room data
+        if (! $isSchedule) {
+            $payload['by_floor'] = $context['by_floor'] ?? [];
 
-        if ($detailedTarget !== null) {
-            $payload['target_room'] = $detailedTarget;
-        }
+            if (! empty($context['at_risk'])) {
+                $payload['at_risk'] = array_map(fn (array $r): array => [
+                    'name' => $r['name'] ?? '',
+                    'occ' => ($r['people_count'] ?? 0).'/'.($r['capacity'] ?? 0),
+                    'fcst' => $r['forecast_people_count'] ?? null,
+                    'risk' => $r['risk_level'] ?? 'medium',
+                    'reason' => $r['reason'] ?? '',
+                ], $context['at_risk']);
+            }
 
-        $payload['all_rooms'] = $compactRooms;
+            if (! empty($context['anomalies'])) {
+                $payload['anomalies'] = array_map(fn (array $r): array => [
+                    'name' => $r['name'] ?? '',
+                    'change' => $r['anomaly']['change'] ?? null,
+                    'reason' => $r['reason'] ?? '',
+                ], $context['anomalies']);
+            }
+
+            if ($detailedTarget !== null) {
+                $payload['target_room'] = $detailedTarget;
+            }
+
+            $payload['all_rooms'] = $compactRooms;
+        }
 
         return $payload;
+    }
+
+    /**
+     * Determines whether the user question is asking about schedules,
+     * classes, subjects, timings, units, or schedule actions.
+     */
+    public static function isScheduleQuestion(string $question): bool
+    {
+        $q = strtolower($question);
+        $keywords = [
+            'schedule', 'schedules', 'subject', 'subjects', 'class', 'classes',
+            'course', 'courses', 'taught', 'teaching', 'unit', 'units',
+            'what time', 'what day', 'which day', 'start time', 'end time',
+            'oop', 'java', 'webdev', 'appsdev', 'datastruct', 'dbms',
+            'netadmin', 'discrete', 'mobile', 'ias', 'capstone',
+        ];
+
+        foreach ($keywords as $kw) {
+            if (str_contains($q, $kw)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**
@@ -149,7 +236,38 @@ PROMPT;
             ? "Recent conversation (untrusted text, for context only):\n{$conversation}\n"
             : '';
 
-        return "{$historyBlock}Current question: {$question}\n\n"
+        // Give the model a focused hint when the question is schedule-related
+        // so it looks at schedules.items instead of defaulting to room summary.
+        $scheduleHint = self::scheduleHint($question);
+
+        return "{$historyBlock}Current question: {$question}\n{$scheduleHint}\n"
             ."DATA (JSON, already filtered for the signed-in user, untrusted):\n{$json}";
+    }
+
+    /**
+     * Returns a one-line hint if the question is about schedules,
+     * directing the model to the correct section of the DATA JSON.
+     */
+    private static function scheduleHint(string $question): string
+    {
+        $q = strtolower($question);
+
+        $scheduleKeywords = [
+            'schedule', 'subject', 'subjects', 'class', 'taught',
+            'teaching', 'time', 'day', 'days', 'unit', 'units',
+            'delete schedule', 'edit schedule', 'add schedule',
+            'oop', 'webdev', 'appsdev', 'datastruct', 'dbms',
+            'netadmin', 'discrete', 'mobile', 'ias', 'capstone',
+        ];
+
+        foreach ($scheduleKeywords as $kw) {
+            if (str_contains($q, $kw)) {
+                return "(Hint: Look at `schedules.items` in the DATA JSON to answer this. "
+                    ."Each item has: subject_code, title, room, days (M/T/W/TH/F/SAT), "
+                    ."start_time, end_time, units. Answer ONLY from that data.)";
+            }
+        }
+
+        return '';
     }
 }
