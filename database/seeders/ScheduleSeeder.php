@@ -16,6 +16,7 @@ class ScheduleSeeder extends Seeder
             'reyes' => User::where('staff_id', 'T-10001')->first(),
             'santos' => User::where('staff_id', 'T-10002')->first(),
             'cruz' => User::where('staff_id', 'T-10003')->first(),
+            'cabiso' => User::where('staff_id', 'T-10004')->first(),
         ];
 
         if (in_array(null, $teachers, true)) {
@@ -145,6 +146,26 @@ class ScheduleSeeder extends Seeder
                 'days' => ['F'],
                 'start_time' => '16:00',
                 'end_time' => '19:00',
+                'units' => 3,
+            ],
+            [
+                'instructor' => 'cabiso',
+                'room' => 'Room 203',
+                'subject_code' => 'OOP-JAVA',
+                'descriptive_title' => 'Object-Oriented Programming',
+                'days' => ['M', 'W', 'F'],
+                'start_time' => '08:30',
+                'end_time' => '09:30',
+                'units' => 3,
+            ],
+            [
+                'instructor' => 'cabiso',
+                'room' => 'LAB 1',
+                'subject_code' => 'DATASTRUCT',
+                'descriptive_title' => 'Data Structures and Algorithms',
+                'days' => ['T', 'TH'],
+                'start_time' => '10:30',
+                'end_time' => '12:00',
                 'units' => 3,
             ],
         ];
