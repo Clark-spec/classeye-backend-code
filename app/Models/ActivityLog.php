@@ -26,6 +26,40 @@ class ActivityLog extends Model
         'created_at' => 'datetime',
     ];
 
+    /**
+     * Each entry is chained to the previous entry for the same room. The HMAC
+     * uses APP_KEY, so someone with database access but without the server
+     * secret cannot silently rewrite history.
+     */
+    protected static function booted(): void
+    {
+        static::creating(function (ActivityLog $log): void {
+            $log->created_at = $log->created_at ?? now();
+
+            $previousHash = static::query()
+                ->where('room_id', $log->room_id)
+                ->whereNotNull('hash')
+                ->orderByDesc('id')
+                ->value('hash');
+
+            $log->prev_hash = $previousHash;
+            $log->hash = $log->computeHash($previousHash);
+        });
+    }
+
+    public function computeHash(?string $previousHash): string
+    {
+        $payload = json_encode([
+            'room_id' => (int) $this->room_id,
+            'user_id' => $this->user_id !== null ? (int) $this->user_id : null,
+            'message' => (string) $this->message,
+            'created_at' => $this->created_at?->utc()->format('Y-m-d H:i:s'),
+            'prev_hash' => $previousHash,
+        ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+
+        return hash_hmac('sha256', (string) $payload, (string) config('app.key'));
+    }
+
     public function room(): BelongsTo
     {
         return $this->belongsTo(Room::class);

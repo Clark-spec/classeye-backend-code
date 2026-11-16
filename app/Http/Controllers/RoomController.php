@@ -11,6 +11,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
+use Illuminate\Support\Facades\DB;
 
 class RoomController extends Controller
 {
@@ -40,8 +41,15 @@ class RoomController extends Controller
         $data['building'] = $data['building'] ?? 'Main Building';
         $data['is_maintenance'] = $data['is_maintenance'] ?? false;
 
-        $room = Room::create($data);
-        $this->recordLog($room, $request->user(), 'Room created');
+        // Room creation, its audit entry and its first snapshot are one unit
+        // of work: either all three are stored or none of them are.
+        $room = DB::transaction(function () use ($data, $request): Room {
+            $room = Room::create($data);
+            $this->recordLog($room, $request->user(), 'Room created');
+            $this->recordSnapshot($room);
+
+            return $room;
+        });
 
         return (new RoomResource($room))->response()->setStatusCode(201);
     }
@@ -64,30 +72,41 @@ class RoomController extends Controller
         $data = $request->validated();
         $data['building'] = $data['building'] ?? $room->building;
 
-        $oldPeopleCount = $room->people_count;
-        $wasUnderMaintenance = $room->is_maintenance;
+        DB::transaction(function () use ($request, $room, $data): void {
+            $oldPeopleCount = $room->people_count;
+            $oldCapacity = $room->capacity;
+            $wasUnderMaintenance = $room->is_maintenance;
 
-        $room->update($data);
+            $room->update($data);
 
-        if ($wasUnderMaintenance !== $room->is_maintenance) {
-            $this->recordLog(
-                $room,
-                $request->user(),
-                $room->is_maintenance ? 'Marked under maintenance' : 'Removed from maintenance'
-            );
-        }
+            if ($wasUnderMaintenance !== $room->is_maintenance) {
+                $this->recordLog(
+                    $room,
+                    $request->user(),
+                    $room->is_maintenance ? 'Marked under maintenance' : 'Removed from maintenance'
+                );
+            }
 
-        if ($oldPeopleCount !== $room->people_count) {
-            $this->recordLog(
-                $room,
-                $request->user(),
-                "People count changed from {$oldPeopleCount} to {$room->people_count}"
-            );
-        }
+            if ($oldPeopleCount !== $room->people_count) {
+                $this->recordLog(
+                    $room,
+                    $request->user(),
+                    "People count changed from {$oldPeopleCount} to {$room->people_count}"
+                );
+            }
 
-        if ($wasUnderMaintenance === $room->is_maintenance && $oldPeopleCount === $room->people_count) {
-            $this->recordLog($room, $request->user(), 'Room details updated');
-        }
+            if ($wasUnderMaintenance === $room->is_maintenance && $oldPeopleCount === $room->people_count) {
+                $this->recordLog($room, $request->user(), 'Room details updated');
+            }
+
+            if (
+                $oldPeopleCount !== $room->people_count
+                || $oldCapacity !== $room->capacity
+                || $wasUnderMaintenance !== $room->is_maintenance
+            ) {
+                $this->recordSnapshot($room);
+            }
+        });
 
         return new RoomResource($room->fresh());
     }
@@ -121,6 +140,20 @@ class RoomController extends Controller
         $room->logs()->create([
             'user_id' => $user?->id,
             'message' => $message,
+        ]);
+    }
+
+    /**
+     * Small private service method: stores one numeric occupancy point for
+     * the insights engine. Only occupancy-relevant changes are recorded.
+     */
+    private function recordSnapshot(Room $room): void
+    {
+        $room->snapshots()->create([
+            'capacity' => $room->capacity,
+            'people_count' => $room->people_count,
+            'is_maintenance' => $room->is_maintenance,
+            'recorded_at' => now(),
         ]);
     }
 }

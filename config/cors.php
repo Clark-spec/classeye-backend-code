@@ -15,7 +15,7 @@ return [
 
     'paths' => ['api/*', 'sanctum/csrf-cookie'],
 
-    'allowed_methods' => ['*'],
+    'allowed_methods' => ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
 
     'allowed_origins' => array_values(array_filter([
         env('FRONTEND_URL', 'http://localhost:5173'),
@@ -26,12 +26,23 @@ return [
         '#^https://classeye-frontend-code.*\.vercel\.app$#',
     ],
 
-    'allowed_headers' => ['*'],
+    /*
+    | Explicit headers are safer than '*'. The SPA sends a bearer token, not
+    | cookies, so credentials support is deliberately disabled.
+    */
+    'allowed_headers' => [
+        'Accept',
+        'Authorization',
+        'Content-Type',
+        'Origin',
+        'X-Requested-With',
+        'X-XSRF-TOKEN',
+    ],
 
     'exposed_headers' => [],
 
-    'max_age' => 0,
+    'max_age' => 3600,
 
-    'supports_credentials' => true,
+    'supports_credentials' => false,
 
 ];

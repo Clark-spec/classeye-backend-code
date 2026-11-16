@@ -42,6 +42,10 @@ class RoomSeeder extends Seeder
         foreach ($rooms as $index => $data) {
             $room = Room::updateOrCreate(['name' => $data['name']], $data);
 
+            // Give the demo a usable time series so the insights panel is not
+            // empty on a fresh database.
+            $this->seedSnapshots($room);
+
             if ($room->logs()->exists()) {
                 continue;
             }
@@ -57,6 +61,56 @@ class RoomSeeder extends Seeder
                 $log->save();
             }
         }
+    }
+
+    /**
+     * Deterministic 4-hour history (9 points, 30 minutes apart). The last
+     * point always matches the room's current people count. Room 203 gets a
+     * deliberate late spike so the anomaly detector has something to show.
+     */
+    private function seedSnapshots(Room $room): void
+    {
+        if ($room->snapshots()->exists()) {
+            return;
+        }
+
+        $series = $this->snapshotSeries($room);
+        $count = count($series);
+
+        foreach ($series as $offset => $peopleCount) {
+            $minutesAgo = ($count - 1 - $offset) * 30;
+
+            $room->snapshots()->create([
+                'capacity' => $room->capacity,
+                'people_count' => $peopleCount,
+                'is_maintenance' => $room->is_maintenance,
+                'recorded_at' => now()->subMinutes($minutesAgo),
+            ]);
+        }
+    }
+
+    /**
+     * @return array<int, int>
+     */
+    private function snapshotSeries(Room $room): array
+    {
+        if ($room->is_maintenance || $room->people_count === 0) {
+            return array_fill(0, 9, 0);
+        }
+
+        if ($room->name === 'Room 203') {
+            return [4, 6, 8, 10, 11, 12, 13, 14, 22];
+        }
+
+        $target = $room->people_count;
+        $series = [];
+
+        for ($index = 0; $index < 9; $index++) {
+            $progress = $index / 8;
+            $series[] = (int) round($target * (0.55 + 0.45 * $progress));
+        }
+
+        return $series;
     }
 
     /**
