@@ -167,6 +167,41 @@ class AssistantService
     }
 
     /**
+     * Keep only the last few well-formed turns. History is user-supplied, so it
+     * is sanitised and length-capped before it reaches a provider.
+     *
+     * @param  array<int, mixed>  $history
+     * @return array<int, array{role: string, content: string}>
+     */
+    private function normalizeHistory(array $history): array
+    {
+        $turns = [];
+
+        foreach (array_slice($history, -6) as $turn) {
+            if (! is_array($turn)) {
+                continue;
+            }
+
+            $role = $turn['role'] ?? null;
+            $content = $turn['content'] ?? null;
+
+            if (! in_array($role, ['user', 'assistant'], true) || ! is_string($content)) {
+                continue;
+            }
+
+            $content = $this->cleanText($content, 500);
+
+            if ($content === '') {
+                continue;
+            }
+
+            $turns[] = ['role' => $role, 'content' => $content];
+        }
+
+        return $turns;
+    }
+
+    /**
      * Defence in depth: even if a future field is added upstream, keys that
      * look personal are removed before an external prompt is assembled.
      *
