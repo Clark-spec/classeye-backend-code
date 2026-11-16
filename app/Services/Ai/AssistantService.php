@@ -3,6 +3,7 @@
 namespace App\Services\Ai;
 
 use App\Models\Room;
+use App\Models\User;
 use Illuminate\Support\Collection;
 use Throwable;
 
@@ -25,9 +26,9 @@ class AssistantService
      * @param  array<int, array{role: string, content: string}>  $history
      * @return array<string, mixed>
      */
-    public function answer(string $question, array $history = []): array
+    public function answer(string $question, array $history = [], ?User $user = null): array
     {
-        $context = $this->context();
+        $context = $this->context($user);
         $history = $this->normalizeHistory($history);
         $question = $this->cleanText(
             $question,
@@ -79,7 +80,7 @@ class AssistantService
     /**
      * @return array<string, mixed>
      */
-    public function context(): array
+    public function context(?User $user = null): array
     {
         $limit = max(1, (int) config('ai.context_room_limit', 30));
 
@@ -109,6 +110,8 @@ class AssistantService
             ->values();
 
         $context = [
+            'role' => $user?->role ?? 'admin',
+            'is_admin' => $user ? $user->isAdmin() : true,
             'generated_at' => now()->toIso8601String(),
             'window_hours' => 2,
             'forecast_minutes' => 30,

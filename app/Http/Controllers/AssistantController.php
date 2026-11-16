@@ -25,7 +25,8 @@ class AssistantController extends Controller
         return response()->json(
             $this->assistant->answer(
                 (string) $validated['question'],
-                is_array($validated['history'] ?? null) ? $validated['history'] : []
+                is_array($validated['history'] ?? null) ? $validated['history'] : [],
+                $request->user()
             )
         );
     }
