@@ -131,30 +131,25 @@ class ConversationGuard
     {
         return 'Class Eye is a classroom monitoring system for school staff. It tracks room '
             .'occupancy and capacity, flags over-capacity rooms, records a tamper-evident '
-            .'activity log for each room, and shows instructor schedules. Its AI insights '
-            .'forecast crowding, assign risk levels, and flag unusual occupancy changes. This '
-            .'assistant covers occupancy: which rooms need attention, empty rooms, floor '
-            .'summaries, and short-term forecasts. Insights and answers are advisory only; '
-            .'staff still decide what to do.';
+            .'activity log for each room, and shows instructor schedules. This AI '
+            .'assistant helps answer questions about occupancy, empty rooms, crowded rooms, '
+            .'and floor summaries. Answers are advisory only; staff still decide what to do.';
     }
 
     private function features(): string
     {
         return 'Class Eye can show room occupancy and capacity, flag over-capacity rooms, '
-            .'forecast the next 30 minutes, detect unusual occupancy changes, show instructor '
-            .'schedules, and keep a verifiable activity log. This chat answers occupancy '
-            .'questions and can also explain the system, its features, and its security '
+            .'show instructor schedules, and keep a verifiable activity log. This chat answers '
+            .'occupancy questions and can also explain the system, its features, and its security '
             .'design. It does not answer schedule questions, so check the Schedule page for '
             .'those.';
     }
 
     private function howItWorks(): string
     {
-        return 'Every room update writes an occupancy snapshot. A deterministic insights '
-            .'service fits a trend, projects occupancy forward, assigns a capacity risk level, '
-            .'and flags unusual changes with a z-score. The dashboard shows the result, and the '
-            .'assistant explains it. These insights are advisory and never change a room '
-            .'automatically.';
+        return 'Class Eye continuously monitors room headcounts and capacity. When staff update '
+            .'a room, the change is logged with a tamper-evident audit hash. The AI assistant '
+            .'analyzes current occupancy data to answer staff questions instantly.';
     }
 
     private function security(): string

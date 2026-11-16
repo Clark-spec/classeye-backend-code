@@ -2,7 +2,7 @@
 
 namespace App\Services\Ai;
 
-use App\Services\Insights\OccupancyInsightsService;
+use App\Models\Room;
 use Illuminate\Support\Collection;
 use Throwable;
 
@@ -17,7 +17,6 @@ use Throwable;
 class AssistantService
 {
     public function __construct(
-        private readonly OccupancyInsightsService $insights,
         private readonly AiManager $manager,
         private readonly ConversationGuard $guard,
     ) {}
@@ -82,52 +81,54 @@ class AssistantService
      */
     public function context(): array
     {
-        $summary = $this->insights->summary();
         $limit = max(1, (int) config('ai.context_room_limit', 30));
 
-        $rooms = collect($summary['rooms'])
+        $rooms = Room::query()
+            ->orderBy('floor')
+            ->orderBy('name')
             ->take($limit)
-            ->map(fn (array $room): array => $this->roomContext($room))
+            ->get()
+            ->map(fn (Room $room): array => $this->roomContext($room))
             ->values();
 
-        $atRisk = $rooms
-            ->filter(fn (array $room): bool => in_array($room['risk_level'], ['critical', 'high'], true))
-            ->values();
-
-        $anomalies = $rooms
-            ->filter(fn (array $room): bool => is_array($room['anomaly']))
-            ->values();
+        $totalRooms = $rooms->count();
+        $occupiedCount = $rooms->filter(fn (array $r): bool => $r['people_count'] > 0)->count();
+        $emptyRooms = $rooms->filter(fn (array $r): bool => $r['status'] === 'empty')->pluck('name')->values()->all();
+        $atRisk = $rooms->filter(fn (array $r): bool => $r['is_over_capacity'] || $r['utilization_percent'] >= 90)->values();
+        $avgUtilization = $totalRooms > 0 ? (int) round((float) $rooms->avg('utilization_percent')) : 0;
 
         $byFloor = $rooms
             ->groupBy('floor')
             ->map(fn (Collection $group, int|string $floor): array => [
                 'floor' => (int) $floor,
                 'utilization_percent' => (int) round((float) $group->avg('utilization_percent')),
-                'at_risk' => $group
-                    ->filter(fn (array $room): bool => in_array($room['risk_level'], ['critical', 'high'], true))
-                    ->count(),
+                'at_risk' => $group->filter(fn (array $r): bool => $r['is_over_capacity'])->count(),
             ])
             ->sortBy('floor')
             ->values();
 
         $context = [
-            'generated_at' => $summary['generated_at'],
-            'window_hours' => (int) $summary['window_hours'],
-            'forecast_minutes' => (int) $summary['forecast_minutes'],
-            'headline' => $this->cleanText((string) $summary['headline']),
+            'generated_at' => now()->toIso8601String(),
+            'window_hours' => 2,
+            'forecast_minutes' => 30,
+            'headline' => sprintf(
+                '%d rooms monitored: %d occupied, %d empty, %d need attention.',
+                $totalRooms,
+                $occupiedCount,
+                count($emptyRooms),
+                $atRisk->count()
+            ),
             'counts' => [
-                'rooms' => (int) $summary['rooms_analysed'],
+                'rooms' => $totalRooms,
+                'occupied' => $occupiedCount,
+                'empty' => count($emptyRooms),
                 'at_risk' => $atRisk->count(),
-                'anomalies' => $anomalies->count(),
-                'average_utilization_percent' => (int) round(((float) $summary['average_utilization']) * 100),
+                'anomalies' => 0,
+                'average_utilization_percent' => $avgUtilization,
             ],
             'at_risk' => $atRisk->all(),
-            'anomalies' => $anomalies->all(),
-            'empty_rooms' => $rooms
-                ->filter(fn (array $room): bool => $room['status'] === 'empty')
-                ->pluck('name')
-                ->values()
-                ->all(),
+            'anomalies' => [],
+            'empty_rooms' => $emptyRooms,
             'by_floor' => $byFloor->all(),
             'rooms' => $rooms->all(),
         ];
@@ -136,71 +137,32 @@ class AssistantService
     }
 
     /**
-     * Keep only the last few well-formed turns. History is user-supplied, so it
-     * is sanitised and length-capped before it reaches a provider.
-     *
-     * @param  array<int, mixed>  $history
-     * @return array<int, array{role: string, content: string}>
-     */
-    private function normalizeHistory(array $history): array
-    {
-        $turns = [];
-
-        foreach (array_slice($history, -6) as $turn) {
-            if (! is_array($turn)) {
-                continue;
-            }
-
-            $role = $turn['role'] ?? null;
-            $content = $turn['content'] ?? null;
-
-            if (! in_array($role, ['user', 'assistant'], true) || ! is_string($content)) {
-                continue;
-            }
-
-            $content = $this->cleanText($content, 500);
-
-            if ($content === '') {
-                continue;
-            }
-
-            $turns[] = ['role' => $role, 'content' => $content];
-        }
-
-        return $turns;
-    }
-
-    /**
-     * @param  array<string, mixed>  $room
      * @return array<string, mixed>
      */
-    private function roomContext(array $room): array
+    private function roomContext(Room $room): array
     {
-        $anomaly = $room['anomaly'] ?? null;
-        $detected = is_array($anomaly) && (bool) ($anomaly['detected'] ?? false);
+        $utilization = $room->capacity > 0
+            ? (int) round(($room->people_count / $room->capacity) * 100)
+            : 0;
+
+        $isOver = $room->isOverCapacity();
+        $riskLevel = $isOver ? 'critical' : ($utilization >= 90 ? 'high' : ($utilization >= 75 ? 'medium' : 'low'));
 
         return [
-            'name' => $this->cleanText((string) $room['name'], 50),
-            'floor' => (int) $room['floor'],
-            'building' => $this->cleanText((string) ($room['building'] ?? ''), 50),
-            'status' => (string) $room['status'],
-            'capacity' => (int) $room['capacity'],
-            'people_count' => (int) $room['people_count'],
-            'forecast_people_count' => (int) $room['forecast_people_count'],
-            'utilization_percent' => (int) round(((float) $room['utilization']) * 100),
-            'risk_level' => (string) $room['risk_level'],
-            'minutes_to_capacity' => $room['minutes_to_capacity'] !== null
-                ? (int) $room['minutes_to_capacity']
-                : null,
-            'confidence' => (string) $room['confidence'],
-            'reason' => $this->cleanText((string) $room['reason'], 240),
-            'anomaly' => $detected
-                ? [
-                    'detected' => true,
-                    'direction' => (string) ($anomaly['direction'] ?? 'change'),
-                    'change' => (int) ($anomaly['change'] ?? 0),
-                ]
-                : null,
+            'name' => $this->cleanText((string) $room->name, 50),
+            'floor' => (int) $room->floor,
+            'building' => $this->cleanText((string) ($room->building ?? ''), 50),
+            'status' => (string) $room->status,
+            'capacity' => (int) $room->capacity,
+            'people_count' => (int) $room->people_count,
+            'forecast_people_count' => (int) $room->people_count,
+            'utilization_percent' => $utilization,
+            'is_over_capacity' => $isOver,
+            'risk_level' => $riskLevel,
+            'minutes_to_capacity' => null,
+            'confidence' => 'high',
+            'reason' => $isOver ? 'Occupancy exceeds room capacity.' : "Occupancy is at {$utilization}% of capacity.",
+            'anomaly' => null,
         ];
     }
 

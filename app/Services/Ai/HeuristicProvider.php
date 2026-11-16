@@ -128,23 +128,17 @@ class HeuristicProvider implements AiProvider
      */
     private function roomAnswer(array $room, int $forecastMinutes): string
     {
-        $anomaly = $room['anomaly'] ?? null;
-        $anomalyText = is_array($anomaly)
-            ? sprintf(' An unusual change of %+d people was detected.', (int) ($anomaly['change'] ?? 0))
-            : '';
+        $status = $room['status'] ?? 'unknown';
+        $overCapacity = ! empty($room['is_over_capacity']) ? ' Room is currently over capacity!' : '';
 
         return sprintf(
-            "%s is %s at %d/%d (%d%% used). The %d-minute forecast is %d people with %s confidence. %s%s\n\nAdvisory only.",
+            "%s is %s at %d/%d (%d%% used).%s\n\nAdvisory only.",
             $room['name'],
-            $room['status'],
-            $room['people_count'],
-            $room['capacity'],
-            $room['utilization_percent'],
-            $forecastMinutes,
-            $room['forecast_people_count'],
-            $room['confidence'],
-            $room['reason'],
-            $anomalyText
+            $status,
+            $room['people_count'] ?? 0,
+            $room['capacity'] ?? 0,
+            $room['utilization_percent'] ?? 0,
+            $overCapacity
         );
     }
 

@@ -98,14 +98,6 @@ class RoomController extends Controller
             if ($wasUnderMaintenance === $room->is_maintenance && $oldPeopleCount === $room->people_count) {
                 $this->recordLog($room, $request->user(), 'Room details updated');
             }
-
-            if (
-                $oldPeopleCount !== $room->people_count
-                || $oldCapacity !== $room->capacity
-                || $wasUnderMaintenance !== $room->is_maintenance
-            ) {
-                $this->recordSnapshot($room);
-            }
         });
 
         return new RoomResource($room->fresh());
@@ -140,20 +132,6 @@ class RoomController extends Controller
         $room->logs()->create([
             'user_id' => $user?->id,
             'message' => $message,
-        ]);
-    }
-
-    /**
-     * Small private service method: stores one numeric occupancy point for
-     * the insights engine. Only occupancy-relevant changes are recorded.
-     */
-    private function recordSnapshot(Room $room): void
-    {
-        $room->snapshots()->create([
-            'capacity' => $room->capacity,
-            'people_count' => $room->people_count,
-            'is_maintenance' => $room->is_maintenance,
-            'recorded_at' => now(),
         ]);
     }
 }

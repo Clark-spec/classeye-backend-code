@@ -60,15 +60,6 @@ class Room extends Model
     }
 
     /**
-     * Numeric occupancy history used by the insights engine. Logs are for
-     * humans; snapshots are for calculations.
-     */
-    public function snapshots(): HasMany
-    {
-        return $this->hasMany(RoomSnapshot::class)->latest('recorded_at');
-    }
-
-    /**
      * Query scopes keep filtering logic reusable and composable. They are the
      * abstraction layer between controllers and raw SQL.
      */
