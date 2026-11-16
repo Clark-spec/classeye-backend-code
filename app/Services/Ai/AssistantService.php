@@ -92,8 +92,9 @@ class AssistantService
             ->values();
 
         $totalRooms = $rooms->count();
-        $occupiedCount = $rooms->filter(fn (array $r): bool => $r['people_count'] > 0)->count();
+        $occupiedCount = $rooms->filter(fn (array $r): bool => $r['people_count'] > 0 && $r['status'] !== 'maintenance')->count();
         $emptyRooms = $rooms->filter(fn (array $r): bool => $r['status'] === 'empty')->pluck('name')->values()->all();
+        $maintenanceRooms = $rooms->filter(fn (array $r): bool => $r['status'] === 'maintenance')->pluck('name')->values()->all();
         $atRisk = $rooms->filter(fn (array $r): bool => $r['is_over_capacity'] || $r['utilization_percent'] >= 90)->values();
         $avgUtilization = $totalRooms > 0 ? (int) round((float) $rooms->avg('utilization_percent')) : 0;
 
@@ -112,16 +113,18 @@ class AssistantService
             'window_hours' => 2,
             'forecast_minutes' => 30,
             'headline' => sprintf(
-                '%d rooms monitored: %d occupied, %d empty, %d need attention.',
+                '%d rooms monitored: %d occupied, %d empty, %d in maintenance, %d need attention.',
                 $totalRooms,
                 $occupiedCount,
                 count($emptyRooms),
+                count($maintenanceRooms),
                 $atRisk->count()
             ),
             'counts' => [
                 'rooms' => $totalRooms,
                 'occupied' => $occupiedCount,
                 'empty' => count($emptyRooms),
+                'maintenance' => count($maintenanceRooms),
                 'at_risk' => $atRisk->count(),
                 'anomalies' => 0,
                 'average_utilization_percent' => $avgUtilization,
@@ -129,6 +132,7 @@ class AssistantService
             'at_risk' => $atRisk->all(),
             'anomalies' => [],
             'empty_rooms' => $emptyRooms,
+            'maintenance_rooms' => $maintenanceRooms,
             'by_floor' => $byFloor->all(),
             'rooms' => $rooms->all(),
         ];
