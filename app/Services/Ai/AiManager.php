@@ -18,6 +18,7 @@ class AiManager
         'openai' => 'https://api.openai.com/v1',
         'anthropic' => 'https://api.anthropic.com/v1',
         'ollama' => 'http://localhost:11434/v1',
+        'groq' => 'https://api.groq.com/openai/v1',
     ];
 
     public function __construct(private readonly HeuristicProvider $heuristic) {}
@@ -64,6 +65,8 @@ class AiManager
         if ($model === '') {
             if ($name === 'ollama') {
                 $model = 'llama3.2:1b';
+            } elseif ($name === 'groq') {
+                $model = 'qwen/qwen3.8-27b';
             } else {
                 throw new RuntimeException('AI model is not configured.');
             }
@@ -77,11 +80,11 @@ class AiManager
             return new AnthropicProvider($baseUrl, $apiKey, $model, $timeout, $maxTokens);
         }
 
-        if ($name !== 'openai' && $name !== 'ollama') {
+        if ($name !== 'openai' && $name !== 'ollama' && $name !== 'groq') {
             throw new RuntimeException('Unknown AI provider.');
         }
 
-        if ($name === 'openai' && $apiKey === '' && ! $this->isLocalUrl($baseUrl)) {
+        if (($name === 'openai' || $name === 'groq') && $apiKey === '' && ! $this->isLocalUrl($baseUrl)) {
             throw new RuntimeException('AI API key is not configured.');
         }
 
