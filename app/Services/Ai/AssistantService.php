@@ -271,7 +271,7 @@ class AssistantService
     {
         $turns = [];
 
-        foreach (array_slice($history, -6) as $turn) {
+        foreach (array_slice($history, -12) as $turn) {
             if (! is_array($turn)) {
                 continue;
             }
@@ -283,7 +283,7 @@ class AssistantService
                 continue;
             }
 
-            $content = $this->cleanText($content, 500);
+            $content = $this->cleanText($content, 2000);
 
             if ($content === '') {
                 continue;

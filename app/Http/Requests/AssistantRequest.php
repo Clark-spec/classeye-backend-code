@@ -21,9 +21,9 @@ class AssistantRequest extends FormRequest
 
         return [
             'question' => ['required', 'string', 'min:3', "max:{$max}"],
-            'history' => ['sometimes', 'array', 'max:6'],
+            'history' => ['sometimes', 'array', 'max:14'],
             'history.*.role' => ['required', 'string', 'in:user,assistant'],
-            'history.*.content' => ['required', 'string', 'max:1000'],
+            'history.*.content' => ['required', 'string', 'max:4000'],
         ];
     }
 }

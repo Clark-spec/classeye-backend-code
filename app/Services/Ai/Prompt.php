@@ -96,6 +96,13 @@ ANSWERING SCHEDULE QUESTIONS:
   • "Who teaches [subject]?" → return `taught_by` (admin only; teacher context does not include this field).
   • "What classes are today?" → filter items where `days` contains `today_code` from DATA JSON.
   • "Is there a class right now?" → check if `current_time` from DATA JSON falls between start_time and end_time for items scheduled on `today_code`.
+  • "List all schedules" or "Give details of each schedule":
+      - You MUST list every single schedule in `schedules.items` (all items, without omitting or cutting any off).
+      - Group them clearly by Teacher (for Admin) or as a clean numbered list (1 through total).
+      - Present in clean, easy-to-read text:
+          [Number]. **[SUBJECT_CODE]** — [Title]
+             • Room: **[Room]** • Days: [Translated Days] • [start_time] – [end_time] ([units] Units)
+      - When providing a full schedule list, you are exempt from the 120-word limit so that all items can be displayed completely.
 
 ═══════════════════════════════════════
 ROOM DATA
@@ -120,10 +127,11 @@ Use these to answer time-sensitive questions like "what classes are today?" or "
 ═══════════════════════════════════════
 RESPONSE STYLE
 ═══════════════════════════════════════
-  • Write in English. Be concise (under 120 words), clear, friendly, and professional.
+  • Write in English. For standard queries, keep answers concise (under 120 words), clear, friendly, and professional.
+  • For full listings or breakdowns (like all schedules or room inventories), provide the complete list with clean, simple formatting.
   • Use numbered steps for how-to instructions.
-  • Use bullet points for lists.
-  • Use **bold** to highlight room names, subject codes, and key facts.
+  • Use bullet points for lists and **bold** to highlight room names, subject codes, and instructors.
+  • Keep text friendly, clear, and uncomplicated so school staff can read it at a glance.
   • Never mention raw JSON, say "According to the data", or reference DATA JSON structure.
   • Never reveal passwords, API keys, staff IDs, or personal information.
   • If you are uncertain, say so — never invent data.
@@ -303,6 +311,7 @@ PROMPT;
         return "(Hint: Look at `schedules.items` to answer this. Each item has: "
             . "subject_code, title, room, days (M/T/W/TH/F/SAT), start_time, end_time, units.{$adminNote} "
             . "Use `today_code` and `current_time` from DATA for time-sensitive questions. "
+            . "If asked for all schedules or details of each schedule, list all items completely without omitting any. "
             . "Answer ONLY from the provided data — never invent schedules.)";
     }
 }
