@@ -9,12 +9,18 @@ use Illuminate\Support\Collection;
 use Throwable;
 
 /**
- * Builds the read-only context, asks the configured provider, and degrades to
- * the local provider when an external call fails.
+ * Builds the read-only context, asks the configured provider, and degrades
+ * gracefully to the heuristic provider when an external call fails.
  *
- * The context contains room aggregates only. Staff names, staff IDs and free
- * text logs are never included, so a third-party model cannot receive personal
- * data by accident.
+ * CIA Triad:
+ *   Confidentiality – staff PII (IDs, emails, passwords) is never sent to any
+ *                     external model. Instructor names are included for admin
+ *                     only (need-to-know). Teacher context is scoped to their
+ *                     own schedules exclusively.
+ *   Integrity       – context is assembled from live DB reads and sanitised
+ *                     before being serialised. The AI is strictly read-only.
+ *   Availability    – every external failure degrades to the heuristic provider
+ *                     so the assistant is always available.
  */
 class AssistantService
 {
@@ -29,8 +35,8 @@ class AssistantService
      */
     public function answer(string $question, array $history = [], ?User $user = null): array
     {
-        $context = $this->context($user);
-        $history = $this->normalizeHistory($history);
+        $context  = $this->context($user);
+        $history  = $this->normalizeHistory($history);
         $question = $this->cleanText(
             $question,
             max(20, (int) config('ai.question_max_length', 500))
@@ -40,18 +46,17 @@ class AssistantService
             $question = 'help';
         }
 
-        // Greetings, thanks, and off-topic questions are handled locally so a
-        // cloud provider is never called for them.
+        // Greetings, thanks, off-topic — handled locally; never reaches a provider.
         $intercepted = $this->guard->intercept($question, $context, $history);
 
         if ($intercepted !== null) {
             return [
-                'answer' => $this->sanitize($intercepted),
-                'provider' => 'heuristic',
-                'model' => null,
-                'degraded' => false,
+                'answer'           => $this->sanitize($intercepted),
+                'provider'         => 'heuristic',
+                'model'            => null,
+                'degraded'         => false,
                 'forecast_minutes' => (int) $context['forecast_minutes'],
-                'generated_at' => now()->toIso8601String(),
+                'generated_at'     => now()->toIso8601String(),
             ];
         }
 
@@ -60,25 +65,27 @@ class AssistantService
         try {
             $answer = $provider->answer($question, $context, $history);
         } catch (Throwable $exception) {
-            // Log the failure for operators, but never return its details:
-            // provider errors can contain request fragments or keys.
+            // Log for operators — never surface provider details to the client.
             report($exception);
             $provider = $this->manager->fallback();
-            $answer = $provider->answer($question, $context, $history);
+            $answer   = $provider->answer($question, $context, $history);
             $degraded = true;
         }
 
         return [
-            'answer' => $this->sanitize($answer),
-            'provider' => $provider->name(),
-            'model' => $provider->model(),
-            'degraded' => $degraded,
+            'answer'           => $this->sanitize($answer),
+            'provider'         => $provider->name(),
+            'model'            => $provider->model(),
+            'degraded'         => $degraded,
             'forecast_minutes' => (int) $context['forecast_minutes'],
-            'generated_at' => now()->toIso8601String(),
+            'generated_at'     => now()->toIso8601String(),
         ];
     }
 
     /**
+     * Assemble the full context payload for the signed-in user.
+     * Personal data is redacted before the array leaves this method.
+     *
      * @return array<string, mixed>
      */
     public function context(?User $user = null): array
@@ -93,30 +100,41 @@ class AssistantService
             ->map(fn (Room $room): array => $this->roomContext($room))
             ->values();
 
-        $totalRooms = $rooms->count();
-        $occupiedCount = $rooms->filter(fn (array $r): bool => $r['people_count'] > 0 && $r['status'] !== 'maintenance')->count();
-        $emptyRooms = $rooms->filter(fn (array $r): bool => $r['status'] === 'empty')->pluck('name')->values()->all();
+        $totalRooms       = $rooms->count();
+        $occupiedCount    = $rooms->filter(fn (array $r): bool => $r['people_count'] > 0 && $r['status'] !== 'maintenance')->count();
+        $emptyRooms       = $rooms->filter(fn (array $r): bool => $r['status'] === 'empty')->pluck('name')->values()->all();
         $maintenanceRooms = $rooms->filter(fn (array $r): bool => $r['status'] === 'maintenance')->pluck('name')->values()->all();
-        $atRisk = $rooms->filter(fn (array $r): bool => $r['is_over_capacity'] || $r['utilization_percent'] >= 90)->values();
-        $avgUtilization = $totalRooms > 0 ? (int) round((float) $rooms->avg('utilization_percent')) : 0;
+        $atRisk           = $rooms->filter(fn (array $r): bool => $r['is_over_capacity'] || $r['utilization_percent'] >= 90)->values();
+        $avgUtilization   = $totalRooms > 0 ? (int) round((float) $rooms->avg('utilization_percent')) : 0;
 
         $byFloor = $rooms
             ->groupBy('floor')
             ->map(fn (Collection $group, int|string $floor): array => [
-                'floor' => (int) $floor,
+                'floor'               => (int) $floor,
                 'utilization_percent' => (int) round((float) $group->avg('utilization_percent')),
-                'at_risk' => $group->filter(fn (array $r): bool => $r['is_over_capacity'])->count(),
+                'at_risk'             => $group->filter(fn (array $r): bool => $r['is_over_capacity'])->count(),
             ])
             ->sortBy('floor')
             ->values();
 
+        // Temporal context — lets the AI answer "what classes are today?"
+        $now       = now();
+        $todayCode = $this->dayCode($now->format('l'));
+
         $context = [
-            'role' => $user?->role ?? 'admin',
+            'role'     => $user?->role ?? 'admin',
             'is_admin' => $user ? $user->isAdmin() : true,
-            'generated_at' => now()->toIso8601String(),
-            'window_hours' => 2,
-            'forecast_minutes' => 30,
-            'headline' => sprintf(
+
+            // Temporal — the AI uses these to answer time-sensitive questions
+            'today'        => $now->format('l'),       // e.g. "Tuesday"
+            'today_code'   => $todayCode,              // e.g. "T"
+            'current_time' => $now->format('H:i'),     // e.g. "14:09"
+            'current_date' => $now->format('M d, Y'),  // e.g. "Nov 18, 2026"
+
+            'generated_at'    => $now->toIso8601String(),
+            'window_hours'    => 2,
+            'forecast_minutes'=> 30,
+            'headline'        => sprintf(
                 '%d rooms monitored: %d occupied, %d empty, %d in maintenance, %d need attention.',
                 $totalRooms,
                 $occupiedCount,
@@ -125,24 +143,44 @@ class AssistantService
                 $atRisk->count()
             ),
             'counts' => [
-                'rooms' => $totalRooms,
-                'occupied' => $occupiedCount,
-                'empty' => count($emptyRooms),
-                'maintenance' => count($maintenanceRooms),
-                'at_risk' => $atRisk->count(),
-                'anomalies' => 0,
+                'rooms'                    => $totalRooms,
+                'occupied'                 => $occupiedCount,
+                'empty'                    => count($emptyRooms),
+                'maintenance'              => count($maintenanceRooms),
+                'at_risk'                  => $atRisk->count(),
+                'anomalies'                => 0,
                 'average_utilization_percent' => $avgUtilization,
             ],
-            'at_risk' => $atRisk->all(),
-            'anomalies' => [],
-            'empty_rooms' => $emptyRooms,
-            'maintenance_rooms' => $maintenanceRooms,
-            'by_floor' => $byFloor->all(),
-            'rooms' => $rooms->all(),
-            'schedules' => $this->scheduleContext($user),
+            'at_risk'          => $atRisk->all(),
+            'anomalies'        => [],
+            'empty_rooms'      => $emptyRooms,
+            'maintenance_rooms'=> $maintenanceRooms,
+            'by_floor'         => $byFloor->all(),
+            'rooms'            => $rooms->all(),
+            'schedules'        => $this->scheduleContext($user),
         ];
 
         return $this->redact($context);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Private helpers
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /**
+     * Map PHP day names to our schedule day codes.
+     */
+    private function dayCode(string $dayName): string
+    {
+        return match ($dayName) {
+            'Monday'    => 'M',
+            'Tuesday'   => 'T',
+            'Wednesday' => 'W',
+            'Thursday'  => 'TH',
+            'Friday'    => 'F',
+            'Saturday'  => 'SAT',
+            default     => 'SUN',
+        };
     }
 
     /**
@@ -154,34 +192,36 @@ class AssistantService
             ? (int) round(($room->people_count / $room->capacity) * 100)
             : 0;
 
-        $isOver = $room->isOverCapacity();
+        $isOver    = $room->isOverCapacity();
         $riskLevel = $isOver ? 'critical' : ($utilization >= 90 ? 'high' : ($utilization >= 75 ? 'medium' : 'low'));
 
         return [
-            'name' => $this->cleanText((string) $room->name, 50),
-            'floor' => (int) $room->floor,
-            'building' => $this->cleanText((string) ($room->building ?? ''), 50),
-            'status' => (string) $room->status,
-            'capacity' => (int) $room->capacity,
-            'people_count' => (int) $room->people_count,
+            'name'                  => $this->cleanText((string) $room->name, 50),
+            'floor'                 => (int) $room->floor,
+            'building'              => $this->cleanText((string) ($room->building ?? ''), 50),
+            'status'                => (string) $room->status,
+            'capacity'              => (int) $room->capacity,
+            'people_count'          => (int) $room->people_count,
             'forecast_people_count' => (int) $room->people_count,
-            'utilization_percent' => $utilization,
-            'is_over_capacity' => $isOver,
-            'risk_level' => $riskLevel,
-            'minutes_to_capacity' => null,
-            'confidence' => 'high',
-            'reason' => $isOver ? 'Occupancy exceeds room capacity.' : "Occupancy is at {$utilization}% of capacity.",
-            'anomaly' => null,
+            'utilization_percent'   => $utilization,
+            'is_over_capacity'      => $isOver,
+            'risk_level'            => $riskLevel,
+            'minutes_to_capacity'   => null,
+            'confidence'            => 'high',
+            'reason'                => $isOver
+                ? 'Occupancy exceeds room capacity.'
+                : "Occupancy is at {$utilization}% of capacity.",
+            'anomaly'               => null,
         ];
     }
 
     /**
      * Build schedule context scoped by role.
-     * - Admin: sees ALL schedules across the school.
-     * - Teacher: sees ONLY their own assigned schedules (CIA Triad – need-to-know).
      *
-     * No staff PII (names, IDs, emails) is included; instructor is omitted so
-     * the AI cannot leak personal data. Only subject, room, days, times, units.
+     * CIA Confidentiality enforcement:
+     *   Admin  — sees ALL schedules school-wide; each item includes the
+     *            instructor's display name (no ID, email, or staff_id).
+     *   Teacher — sees ONLY their own assigned schedules; no cross-teacher data.
      *
      * @return array<string, mixed>
      */
@@ -189,25 +229,28 @@ class AssistantService
     {
         $isAdmin = $user ? $user->isAdmin() : true;
 
-        $query = Schedule::query()->with(['room']);
+        $schedules = Schedule::query()
+            ->with(['room', 'instructor'])   // instructor = BelongsTo(User::class, 'user_id')
+            ->when(! $isAdmin && $user !== null, fn ($q) => $q->where('user_id', $user->id))
+            ->get();
 
-        // Teachers only see their own schedules
-        if (! $isAdmin && $user !== null) {
-            $query->where('schedules.user_id', $user->id);
-        }
-
-        $schedules = $query->get();
-
-        $items = $schedules->map(function (Schedule $s): array {
-            return [
-                'subject_code'      => $this->cleanText((string) $s->subject_code, 30),
-                'title'             => $this->cleanText((string) $s->descriptive_title, 80),
-                'room'              => $this->cleanText((string) ($s->room?->name ?? ''), 50),
-                'days'              => $s->orderedDays(),
-                'start_time'        => substr((string) $s->start_time, 0, 5),
-                'end_time'          => substr((string) $s->end_time, 0, 5),
-                'units'             => (int) $s->units,
+        $items = $schedules->map(function (Schedule $s) use ($isAdmin): array {
+            $item = [
+                'subject_code' => $this->cleanText((string) $s->subject_code, 30),
+                'title'        => $this->cleanText((string) $s->descriptive_title, 80),
+                'room'         => $this->cleanText((string) ($s->room?->name ?? ''), 50),
+                'days'         => $s->orderedDays(),
+                'start_time'   => substr((string) $s->start_time, 0, 5),
+                'end_time'     => substr((string) $s->end_time, 0, 5),
+                'units'        => (int) $s->units,
             ];
+
+            // Admin sees who teaches each subject — teacher sees only own load.
+            if ($isAdmin) {
+                $item['taught_by'] = $this->cleanText((string) ($s->instructor?->name ?? 'Unknown'), 60);
+            }
+
+            return $item;
         })->values()->all();
 
         return [
@@ -218,8 +261,8 @@ class AssistantService
     }
 
     /**
-     * Keep only the last few well-formed turns. History is user-supplied, so it
-     * is sanitised and length-capped before it reaches a provider.
+     * Keep only the last few well-formed turns. History is user-supplied, so
+     * it is sanitised and length-capped before it reaches a provider.
      *
      * @param  array<int, mixed>  $history
      * @return array<int, array{role: string, content: string}>
@@ -233,7 +276,7 @@ class AssistantService
                 continue;
             }
 
-            $role = $turn['role'] ?? null;
+            $role    = $turn['role'] ?? null;
             $content = $turn['content'] ?? null;
 
             if (! in_array($role, ['user', 'assistant'], true) || ! is_string($content)) {
@@ -254,7 +297,7 @@ class AssistantService
 
     /**
      * Defence in depth: even if a future field is added upstream, keys that
-     * look personal are removed before an external prompt is assembled.
+     * look personal are stripped before an external prompt is built.
      *
      * @param  array<string, mixed>  $context
      * @return array<string, mixed>
@@ -277,7 +320,10 @@ class AssistantService
         $clean = [];
 
         foreach ($value as $key => $item) {
-            if (is_string($key) && preg_match('/staff|user|instructor|email|phone|password/i', $key) === 1) {
+            // Strip keys that look like personal identifiers.
+            // Note: 'taught_by' is intentionally allowed — it carries only the
+            // teacher's display name and is scoped to admin context only.
+            if (is_string($key) && preg_match('/\bstaff_id\b|\buser_id\b|\bemail\b|\bphone\b|\bpassword\b/i', $key) === 1) {
                 continue;
             }
 
@@ -288,8 +334,8 @@ class AssistantService
     }
 
     /**
-     * Treat every value as untrusted: strip markup and control characters,
-     * collapse whitespace, and cap the length before it reaches a model.
+     * Strip markup, control characters, and collapse whitespace.
+     * Every value is treated as untrusted text.
      */
     private function cleanText(string $value, int $max = 300): string
     {
@@ -301,10 +347,24 @@ class AssistantService
         return mb_substr($text, 0, $max);
     }
 
+    /**
+     * Final sanitisation pass on the AI's answer before it is returned to the
+     * client. Strips markup, collapses excessive blank lines, and applies a
+     * generous length cap.
+     *
+     * CIA Integrity: prevents prompt-injection fragments from echoing back.
+     */
     private function sanitize(string $answer): string
     {
-        $text = $this->cleanText($answer, 2000);
+        // Strip any HTML or script tags that may have been echoed back.
+        $text = strip_tags($answer);
+        // Remove dangerous characters / control codes.
+        $text = preg_replace('/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/u', '', $text) ?? '';
+        // Collapse more than two consecutive blank lines.
         $text = preg_replace("/\n{3,}/", "\n\n", $text) ?? $text;
+        $text = trim($text);
+        // Cap at ~1 500 chars (well above the 500-token reply limit).
+        $text = mb_substr($text, 0, 1500);
 
         return $text === '' ? 'The assistant could not produce an answer.' : $text;
     }

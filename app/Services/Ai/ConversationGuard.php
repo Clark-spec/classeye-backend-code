@@ -86,10 +86,10 @@ class ConversationGuard
         }
 
         if ($this->matchesHelp($text)) {
-            return 'I can answer questions about room occupancy, capacity risk, empty rooms, '
-                .'floor summaries, and short-term forecasts. I cannot help with unrelated topics. '
-                .'Try asking "Which rooms need attention?", "Which rooms are empty?", or '
-                .'"What is the forecast for Room 203?"';
+            return 'I can answer questions about room occupancy, capacity alerts, empty rooms, '
+                .'floor summaries, and teaching schedules. '
+                .'Try asking "Which rooms need attention?", "What classes are today?", or '
+                .'"What time is OOP-JAVA?"';
         }
 
         // Short follow-ups such as "tell me more" only make sense in a thread.
@@ -97,9 +97,9 @@ class ConversationGuard
             return null;
         }
 
-        return 'I can only help with Class Eye room occupancy, risk, and forecasts, so I '
+        return 'I can only help with Class Eye room occupancy, schedules, and system navigation, so I '
             .'cannot answer unrelated questions. Try asking "Which rooms need attention?", '
-            .'"Which rooms are empty?", or "What is the forecast for Room 203?"';
+            .'"What classes are today?", or "What time is OOP-JAVA?"';
     }
 
     private function systemAnswer(string $text): ?string
@@ -136,39 +136,45 @@ class ConversationGuard
 
     private function about(): string
     {
-        return 'Class Eye is a classroom monitoring system for school staff. It tracks room '
-            .'occupancy and capacity, flags over-capacity rooms, records a tamper-evident '
-            .'activity log for each room, and shows instructor schedules. This AI '
-            .'assistant helps answer questions about occupancy, empty rooms, crowded rooms, '
-            .'and floor summaries. Answers are advisory only; staff still decide what to do.';
+        return 'Class Eye is a classroom monitoring system for school staff. It tracks real-time '
+            .'room occupancy and capacity, flags over-capacity rooms, records a tamper-evident '
+            .'activity log per room, and displays teaching schedules. '
+            .'This AI assistant can answer questions about room occupancy, capacity alerts, '
+            .'floor summaries, and schedules (subjects, times, days, rooms, units). '
+            .'All answers are advisory — staff make the final decisions.';
     }
 
     private function features(): string
     {
-        return 'Class Eye can show room occupancy and capacity, flag over-capacity rooms, '
-            .'show instructor schedules (subject, days, times, units, room), '
-            .'and keep a verifiable activity log. This chat answers both room occupancy '
-            .'and schedule questions, and can explain the system, its features, and its security design.';
+        return 'Class Eye provides: real-time room occupancy and capacity tracking, '
+            .'over-capacity alerts, floor-level utilization summaries, teaching schedules '
+            .'management (subjects, days, times, rooms, units, instructors), and a '
+            .'tamper-evident activity log per room. '
+            .'This AI assistant answers room and schedule questions and can explain '
+            .'system features, navigation, and security design.';
     }
 
     private function howItWorks(): string
     {
-        return 'Class Eye continuously monitors room headcounts and capacity. When staff update '
-            .'a room, the change is logged with a tamper-evident audit hash. The AI assistant '
-            .'analyzes current occupancy data to answer staff questions instantly.';
+        return 'Class Eye monitors room headcounts and capacity in real time. '
+            .'When staff update a room, the change is recorded with a tamper-evident audit hash. '
+            .'The AI assistant reads live room and schedule data to answer your questions instantly. '
+            .'Admins see all rooms and all teacher schedules; teachers see only their own schedule.';
     }
 
     private function security(): string
     {
-        return 'Class Eye applies the CIA triad. Confidentiality: Sanctum bearer tokens expire '
-            .'and are revoked on password reset, CORS uses an explicit allow-list, passwords are '
-            .'hashed, and the assistant receives only the signed-in user\'s filtered room data, '
-            .'never staff details. Integrity: room changes, logs, and snapshots are written in one '
-            .'transaction, database constraints reject invalid values, and activity logs use a '
-            .'per-room HMAC hash chain that audit:verify recomputes to expose tampering. '
-            .'Availability: named rate limits, graceful fallback to the local insights and the local '
-            .'assistant when a model fails, and idempotent startup migrations. The assistant is '
-            .'read-only and never changes rooms, logs, or alerts.';
+        return 'Class Eye applies the CIA triad. '
+            .'Confidentiality: Sanctum bearer tokens expire and are revoked on password reset; '
+            .'CORS is restricted to an explicit allow-list; passwords are hashed; the AI receives '
+            .'only the signed-in user\'s filtered data — no staff IDs, emails, or passwords. '
+            .'Admin context includes instructor names (need-to-know); teacher context is scoped to '
+            .'their own schedules only. '
+            .'Integrity: room changes are written in one transaction with database constraints; '
+            .'activity logs use a per-room HMAC hash chain that audit:verify recomputes to detect tampering; '
+            .'the AI is strictly read-only. '
+            .'Availability: graceful fallback to the local assistant when the AI provider fails; '
+            .'idempotent startup migrations ensure the system recovers cleanly after a restart.';
     }
 
     private function mentionsDomain(string $text): bool
