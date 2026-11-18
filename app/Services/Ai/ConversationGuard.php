@@ -33,7 +33,7 @@ class ConversationGuard
         'course', 'courses', 'section', 'lesson',
     ];
 
-    private const GREETING_PATTERN = '/^(hi|hello|hey|greetings|good\s+(morning|afternoon|evening)|how\s+are\s+you(?:\s+doing)?|how\s+is\s+it\s+going|how\'s\s+it\s+going|what\'s\s+up)\b/i';
+    private const GREETING_PATTERN = '/^(h+i+|h+e+l+l*o+|h+e+y+|greetings|howdy|yo|sup|good\s+(morning|afternoon|evening|day)|how\s+are\s+you(?:\s+doing)?|how\s+is\s+it\s+going|how\'?s\s+it\s+going|what\'?s\s+up)\b/i';
 
     private const THANKS_PATTERN = '/^(thanks|thank\s+you|thx|ty|appreciate\s+it)\b/i';
 
@@ -198,12 +198,14 @@ class ConversationGuard
             return false;
         }
 
-        return preg_match(self::GREETING_PATTERN, $text) === 1;
+        $clean = trim($text, " \t\n\r\0\x0B?.!,;:-~");
+
+        return preg_match(self::GREETING_PATTERN, $clean) === 1;
     }
 
     private function matchesHelp(string $text): bool
     {
-        $normalized = trim($text, " \t\n\r\0\x0B?.!,;:");
+        $normalized = trim($text, " \t\n\r\0\x0B?.!,;:-~");
 
         return in_array($normalized, [
             'help',
@@ -226,8 +228,8 @@ class ConversationGuard
     {
         $status = $headline !== '' ? ' Right now: '.$headline : '';
 
-        return "Hello! Thanks for asking. I'm ready to help with room occupancy, capacity "
-            ."risk, empty rooms, floor summaries, and short-term forecasts.{$status} "
-            .'Try asking "Which rooms need attention?" or "Which rooms are empty?"';
+        return "Hello! I'm ready to help with room occupancy, capacity alerts, schedules, "
+            ."and system navigation.{$status} "
+            .'Try asking "Which rooms need attention?", "What classes are today?", or "What time is OOP-JAVA?"';
     }
 }
