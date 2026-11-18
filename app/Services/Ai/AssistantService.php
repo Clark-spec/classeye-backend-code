@@ -363,8 +363,8 @@ class AssistantService
         // Collapse more than two consecutive blank lines.
         $text = preg_replace("/\n{3,}/", "\n\n", $text) ?? $text;
         $text = trim($text);
-        // Cap at ~1 500 chars (well above the 500-token reply limit).
-        $text = mb_substr($text, 0, 1500);
+        // Cap at ~4 000 chars (well above the 1200-token reply limit).
+        $text = mb_substr($text, 0, 4000);
 
         return $text === '' ? 'The assistant could not produce an answer.' : $text;
     }
